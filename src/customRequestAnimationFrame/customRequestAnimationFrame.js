@@ -1,44 +1,53 @@
 'use strict';
 
 /**
- * 
- * @param callbackQueues
- * @param callbackListId
- * @returns {*[]|*}
+ * Helper method to scope async callback stack.
+ * @param handler - the method to be executed within setTimeout.
+ * @param delayLength - the 'tick' length that will pass before method executed.
  */
-function initializeCallbackQueue(callbackQueues, callbackListId) {
-    if (!callbackQueues[callbackListId]) {
-        return callbackQueues[callbackListId] = [];
-    }
-    
-    return callbackQueues;
+function setDelay(handler, delayLength) {
+    return setTimeout(handler, delayLength);
 }
 
 export default (function() {
-    const REFRESH_TIME = 1000; // default to one second
-    const DEFAULT_REFRESH_LIMIT = 60; // default to browser 60 callbacks per second
     let callbackId = 0;
     let currentTime = 0;
-    let callbacks = {};
-    let setTimeoutId;
+    let callbacksQueue = [];
+    let delayQueue = [];
 
     return function (callback, delay = 0) {
-        callbackId++;
+        const currentId = callbackId
         currentTime = new Date().getTime();
 
-        initializeCallbackQueue(callbacks, callbackId);
-        callbacks[callbackId].push({ callback, delay });
+        callbacksQueue.push({ CURRENT_ID: currentId, currentTime, callback, delay });
 
-        // TODO:
-        //  1) Fill queue based on criteria
-        //  2) Figure out delay criteria
-        //  3) Iterate through and execute queue based on criteria
-        setTimeoutId = setTimeout(() => {
-            // Iterate through queue, account for tick delay
-            callback(currentTime);
-            // clear queue
-        }, REFRESH_TIME);
+        try {
+            callbacksQueue.forEach((item, index) => {
+                if (item.delay > 0) {
+                    delayQueue.push({ CURRENT_ID: currentId, currentTime, callback, delay });
+                    callbacksQueue.splice(index, 1);
+                    return;
+                }
+                item.callback(currentTime);
+                // remove item after called.
+                callbacksQueue.splice(index, 1);
+            });
 
-        return callbackId;
+            delayQueue.forEach((item, index) => {
+                setDelay(() => item.callback(item.currentTime), delay);
+                // remove item after called.
+                delayQueue.splice(index, 1);
+            })
+
+            // Iterate callback id after invocation.
+            callbackId++;
+        } catch(err) {
+            /**
+             * Ignore error per [w3c editor's draft invoke callback algorithm]
+             * {@link https://www.w3.org/TR/animation-timing/#dfn-invoke-callbacks-algorithm}
+             */
+            console.error(err);
+        }
+        return currentId;
     }
 })();
