@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * Helper method to scope async callback stack.
+ * Helper method to scope async callback stack; which will ensure the desired
+ * amount of executions.
  * @param handler - the method to be executed within setTimeout.
  * @param delayLength - the 'tick' length that will pass before method executed.
  */
@@ -11,43 +12,55 @@ function setDelay(handler, delayLength) {
 
 export default (function() {
     let callbackId = 0;
-    let currentTime = 0;
+    let now = 0;
+    let last = 0;
     let callbacksQueue = [];
-    let delayQueue = [];
+    const frames = 1000 / 60
 
     return function (callback, delay = 0) {
-        const currentId = callbackId
-        currentTime = new Date().getTime();
+        now = performance.now();
+        let currentCallback;
+        let currentCallbackId = callbackId;
+        let next = Math.max(0, frames - (now - last));
+        last = now + next;
 
-        callbacksQueue.push({ CURRENT_ID: currentId, currentTime, callback, delay });
+        setDelay(() => {
+            try {
+                for (let callbackId in callbacksQueue) {
+                    const item = callbacksQueue[callbackId];
+                    currentCallback = callbacksQueue[callbackId].callback;
+                    if (item.delay > 0) {
+                        setDelay(() => currentCallback(last), item.delay);
+                        // remove item after called.
+                        delete callbacksQueue[callbackId];
+                        return;
+                    }
 
-        try {
-            callbacksQueue.forEach((item, index) => {
-                if (item.delay > 0) {
-                    delayQueue.push({ CURRENT_ID: currentId, currentTime, callback, delay });
-                    callbacksQueue.splice(index, 1);
-                    return;
+                    currentCallback(last);
+                    // remove item after called.
+                    delete callbacksQueue[callbackId];
                 }
-                item.callback(currentTime);
-                // remove item after called.
-                callbacksQueue.splice(index, 1);
-            });
 
-            delayQueue.forEach((item, index) => {
-                setDelay(() => item.callback(item.currentTime), delay);
-                // remove item after called.
-                delayQueue.splice(index, 1);
-            })
+                // Iterate callback id after invocation.
+                callbackId++;
+            } catch(err) {
+                /**
+                 * Ignore error per [w3c specification invoke callback algorithm]
+                 * {@link https://www.w3.org/TR/animation-timing/#dfn-invoke-callbacks-algorithm}
+                 */
+                console.error(err);
+            }
+        },
+        next);
 
-            // Iterate callback id after invocation.
-            callbackId++;
-        } catch(err) {
-            /**
-             * Ignore error per [w3c editor's draft invoke callback algorithm]
-             * {@link https://www.w3.org/TR/animation-timing/#dfn-invoke-callbacks-algorithm}
-             */
-            console.error(err);
-        }
-        return currentId;
+        callbacksQueue[currentCallbackId] = {
+            callbackId: currentCallbackId,
+            currentTime: now,
+            callback,
+            delay
+        };
+
+        callbackId++;
+        return currentCallbackId;
     }
 })();
