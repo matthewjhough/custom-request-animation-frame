@@ -14,7 +14,7 @@ export default (function() {
     let callbackId = 0;
     let now = 0;
     let last = 0;
-    let callbacksQueue = [];
+    let callbacksQueue = {};
     const frames = 1000 / 60
 
     return function (callback, delay = 0) {
