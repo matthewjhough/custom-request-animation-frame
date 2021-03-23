@@ -10,6 +10,23 @@ function setDelay(handler, delayLength) {
     return setTimeout(handler, delayLength);
 }
 
+/**
+ * Helper method to invoke callback with error handling.
+ * @param currentCallback
+ * @param last
+ */
+function invokeCallback(currentCallback, last) {
+    try {
+        currentCallback(last);
+    } catch(err) {
+        /**
+         * Ignore error per [w3c specification invoke callback algorithm]
+         * {@link https://www.w3.org/TR/animation-timing/#dfn-invoke-callbacks-algorithm}
+         */
+        console.error(err);
+    }
+}
+
 export default (function() {
     let callbackId = 0;
     let now = 0;
@@ -25,30 +42,22 @@ export default (function() {
         last = now + next;
 
         setDelay(() => {
-            try {
-                for (let callbackId in callbacksQueue) {
-                    const item = callbacksQueue[callbackId];
-                    currentCallback = callbacksQueue[callbackId].callback;
-                    if (item.delay > 0) {
-                        setDelay(() => currentCallback(last), item.delay);
-                        // remove item after called.
-                        delete callbacksQueue[callbackId];
-                        return;
-                    }
-
-                    currentCallback(last);
+            for (let id in callbacksQueue) {
+                const item = callbacksQueue[id];
+                currentCallback = callbacksQueue[id].callback;
+                if (item.delay > 0) {
+                    setDelay(() => {
+                        invokeCallback(currentCallback, last);
+                    }, item.delay);
                     // remove item after called.
-                    delete callbacksQueue[callbackId];
+                    delete callbacksQueue[id];
+                    return;
                 }
 
-                // Iterate callback id after invocation.
-                callbackId++;
-            } catch(err) {
-                /**
-                 * Ignore error per [w3c specification invoke callback algorithm]
-                 * {@link https://www.w3.org/TR/animation-timing/#dfn-invoke-callbacks-algorithm}
-                 */
-                console.error(err);
+                invokeCallback(currentCallback, last);
+                // remove item after called.
+                delete callbacksQueue[id];
+                id++;
             }
         },
         next);
